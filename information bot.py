@@ -1,6 +1,7 @@
 from tkinter import *
 import time
 import datetime
+import re
 import pyttsx3
 import speech_recognition as sr
 from threading import Thread
@@ -45,7 +46,7 @@ def web_scraping(qs):
     URL = 'https://www.google.com/search?q=' + qs
     page = requests.get(URL)
 
-    soup = BeautifulSoup(page.content, 'html.parser')
+    soup = BeautifulSoup(page.text, "lxml")
 
     links = soup.findAll("a")
     all_links = []
@@ -66,7 +67,7 @@ def web_scraping(qs):
     div1 = soup.find_all("div", class_="Ap5OSd")
     div2 = soup.find_all("div", class_="nGphre")
     div3 = soup.find_all("div", class_="BNeawe iBp4i AP7Wnd")
-    div4 = soup.find_all("div", class_="m7B03")
+    div4 = soup.find_all("div", class_="wveNAf")
 
     if len(div0) != 0:
         answer = div0[0].text
@@ -78,7 +79,7 @@ def web_scraping(qs):
     elif len(div3) != 0:
         answer = div3[1].text
     elif len(div4) != 0:
-        answer = div4[0].find_next("div").text
+        answer = div4[0].text
     elif flag == True:
         page2 = requests.get(wiki)
         soup = BeautifulSoup(page2.text, 'html.parser')
@@ -145,14 +146,14 @@ def takecommand():
     r.energy_threshold = 4000
     with sr.Microphone() as source:
         print("Listening...")
-        #r.pause_threshold = 3
+        # r.pause_threshold = 3
         audio = r.listen(source, timeout=4, phrase_time_limit=4)
 
     try:
         print("Recognizing..")
-        query = r.recognize_google(audio, language='en-in')
+        query = r.recognize_google(audio, language='en-in').lower()
         print(f"user Said :{query}\n")
-        query = query.lower()
+        # query = query.lower()
         canvas2.create_text(490, 120, anchor=NE, justify=RIGHT, text=query, font=(
             'fixedsys', -30), fill="white", width=350)
         global img3
@@ -165,22 +166,88 @@ def takecommand():
         return "None"
 
 
+class Data:
+    global result
+
+    def __init__(self):
+        self.data = self.get_data()
+
+    def get_data(self):
+        response = requests.get("https://covid19indapi.herokuapp.com/india")
+        data = response.json()
+        return data
+
+    def get_state_data(self, state):
+        data = self.data['state']
+
+        for content in data:
+            if content['state_name'].lower() == state.lower():
+                return content
+
+    def get_list_of_states(self):
+        states = []
+        for state in self.data['state']:
+            states.append(state['state_name'].lower())
+        return states
+
+
 def main_window():
     global query
+    global result
+    global flag2
+    global loading
     wishme()
+    data = Data()
+    state_list = data.get_list_of_states()
+    STATE_PATTERN = {
+        re.compile("[\w\s]+ cases [\w\s]+"): lambda state_list: data.get_state_data(state_list)['confirmed'],
+        re.compile("[\w\s]+ deaths [\w\s]+"): lambda state_list: data.get_state_data(state_list)['deaths'],
+    }
+
     while True:
         if query != None:
+            for pattern, func in STATE_PATTERN.items():
+                if pattern.match(query):
+                    words = set(query.split(" "))
+                    for state in state_list:
+                        if state in words:
+                            result = func(state)
+                            break
+
             if 'shutdown' in query or 'quit' in query or 'stop' in query or 'goodbye' in query:
                 shut_down()
                 break
+
+            elif result:
+                print(result)
+                canvas2.create_text(10, 225, anchor=NW, text=result, font=(
+                    'Candara Light', -25, 'bold italic'), fill="white", width=350)
+                flag2 = False
+                loading.destroy()
+
+                p1 = Thread(target=speak, args=(result,))
+                p1.start()
+                p2 = Thread(target=transition2)
+                p2.start()
+                result = None
+                query = None
+
             else:
                 web_scraping(query)
                 query = None
+        # if query != None:
+        #     if 'shutdown' in query or 'quit' in query or 'stop' in query or 'goodbye' in query:
+        #         shut_down()
+        #         break
+        #     else:
+        #         web_scraping(query)
+        #         query = None
 
 
 if __name__ == "__main__":
     loading = None
     query = None
+    result = None
     flag = True
     flag2 = True
 
